@@ -1,4 +1,4 @@
-# ChEMBL_target-to-drugs_query_tool
+# RNAseq Pipeline
 A command-line Python tool that queries the ChEMBL database to discover drugs targeting specific genes/proteins. Returns comprehensive drug information including approval status, mechanism of action, and disease indications [mesh] and [EFO terms].
 
 ## 📋 Table of Contents
