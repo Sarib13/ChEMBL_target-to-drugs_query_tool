@@ -1,346 +1,152 @@
-# RNAseq Pipeline
-A command-line Python tool that queries the ChEMBL database to discover drugs targeting specific genes/proteins. Returns comprehensive drug information including approval status, mechanism of action, and disease indications [mesh] and [EFO terms].
+# RNA-seq and Drug Repurposing Toolkit
 
-## 📋 Table of Contents
+This repository contains two complementary command-line pipelines:
 
-- [Overview](#overview)
-- [Features](#features)
-- [What This Tool Does](#what-this-tool-does)
+1. RNA-seq differential expression and pathway/drug discovery pipeline.
+2. ChEMBL-based drug repurposing pipeline for one or more target genes.
+
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Repository Structure](#repository-structure)
 - [Installation](#installation)
-- [Usage](#usage)
-- [Command Line Arguments](#command-line-arguments)
-- [Output Format](#output-format)
-- [Examples](#examples)
-- [Recommended Targets](#recommended-targets)
-- [Logging & Debugging](#logging--debugging)
-- [How It Works](#how-it-works)
+- [Pipeline 1: RNA-seq Analysis](#pipeline-1-rna-seq-analysis)
+- [Pipeline 2: ChEMBL Drug Repurposing](#pipeline-2-chembl-drug-repurposing)
+- [Typical End-to-End Workflow](#typical-end-to-end-workflow)
 - [Limitations](#limitations)
-- [Requirements](#requirements)
 - [License](#license)
 
-## Overview
+## Project Overview
 
-This tool provides a simple, reproducible way to connect a target gene to potential drugs using ChEMBL's public API. It's designed for bioinformatics researchers, drug discovery scientists, and students who want to quickly identify:
+The toolkit helps you go from differential expression output to candidate drug leads.
 
-- What drugs target a specific gene/protein
-- Whether those drugs are FDA-approved
-- How they work (mechanism of action)
-- What diseases they treat
+- Pipeline 1 reads a GEO2R-style TSV, identifies significant genes, performs KEGG pathway enrichment via Enrichr, intersects disease-associated KEGG genes, and retrieves candidate drugs from KEGG.
+- Pipeline 2 queries ChEMBL to return approved and investigational drugs for target genes, with mechanism and disease annotations.
 
-**No API key required** - ChEMBL is freely accessible.
+## Repository Structure
 
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **7 Key Data Fields** | Drug ID, Name, Approval Year, Max Phase, Mechanism of Action, Action Type, Disease |
-| **Disease Filtering** | Filter results by specific disease (MeSH or EFO terms) |
-| **Dual Disease Search** | Searches both `mesh_heading` AND `efo_term` for comprehensive coverage |
-| **Approval Year Extraction** | Retrieves approval year for FDA-approved drugs |
-| **Excel Output** | Clean, formatted Excel file with multiple columns |
-| **Verbose Logging** | Optional `--logs` flag for debugging and transparency |
-| **Rate-Limited** | Built-in delays to respect ChEMBL API limits |
-
----
-
-## What This Tool Does
-
-```
-Input:  Gene symbol (e.g., "EGFR", "BRCA1", "HER2")
-          ↓
-Step 1: Find ChEMBL target ID for the gene
-          ↓
-Step 2: Retrieve all drug mechanisms for that target
-          ↓
-Step 3: Fetch drug details (name, approval year, disease indications)
-          ↓
-Step 4: Filter by disease (optional)
-          ↓
-Output: Excel file with 7 columns of drug information
-```
-
-**It answers questions like:**
-- "What drugs target EGFR?"
-- "Is there an approved drug for BRCA1-related breast cancer?"
-- "What is the mechanism of action for Trastuzumab?"
-- "Which diseases is Osimertinib approved for?"
-
----
+- `Script/RNA_seq_Pipeline.py`: RNA-seq analysis pipeline (newly added).
+- `Script/chembl_drugs_repurposing.py`: ChEMBL drug query and prioritization pipeline.
+- `requirements.txt`: Python dependencies.
 
 ## Installation
 
-### 1. Clone the repository
+### 1. Clone repository
 
 ```bash
 git clone https://github.com/Sarib13/ChEMBL_target-to-drugs_query_tool.git
 cd ChEMBL_target-to-drugs_query_tool
 ```
 
-### 2. Install required packages
-
-```bash
-pip install chembl_webresource_client pandas openpyxl
-```
-
-Or using requirements.txt:
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
+pip install requests
 ```
 
----
+Python 3.8+ is recommended.
 
-## Usage
+## Pipeline 1: RNA-seq Analysis
 
-### Basic Usage
+Script: `Script/RNA_seq_Pipeline.py`
+
+### What this script does
+
+Input: differential expression TSV and disease name.
+
+1. Loads TSV and auto-detects gene, p-value, and logFC columns.
+2. Filters significant genes using configurable thresholds.
+3. Runs Enrichr KEGG 2021 Human pathway enrichment.
+4. Searches KEGG DISEASE for disease-associated genes.
+5. Finds overlap between significant genes and disease genes.
+6. Queries KEGG DRUG for candidate drugs linked to overlapping genes.
+7. Writes a multi-sheet Excel report.
+
+### Default thresholds
+
+- P-value threshold: `< 0.05`
+- Absolute logFC threshold: `> 2.0`
+
+### Usage
 
 ```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene EGFR
+python Script/RNA_seq_Pipeline.py "Alzheimer disease" --input input.tsv --output rna_seq_analysis_results.xlsx
 ```
 
-### With Disease Filter
+More examples:
 
 ```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene EGFR --disease "Colorectal Neoplasms"
+python Script/RNA_seq_Pipeline.py "Parkinson disease" --input GSE203155_AS.top.table.tsv
+python Script/RNA_seq_Pipeline.py "breast cancer" --input GSE46517.top.table.tsv --pval 0.01 --logfc 1.5
 ```
 
-### Custom Output File
+### Command line arguments
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `disease` | Yes | - | Disease name used for KEGG DISEASE search |
+| `--input`, `-i` | No | `input.tsv` | Path to differential expression TSV |
+| `--output`, `-o` | No | `rna_seq_analysis_results2.xlsx` | Output Excel file |
+| `--pval` | No | `0.05` | Significance cutoff for p-value |
+| `--logfc` | No | `2.0` | Absolute logFC cutoff |
+
+### Output sheets
+
+The RNA-seq pipeline writes these sheets:
+
+- `Original_Data`: input table after cleaning.
+- `Upregulated_Genes`: significant upregulated genes.
+- `Downregulated_Genes`: significant downregulated genes.
+- `Pathways`: top enriched KEGG pathways from Enrichr.
+- `Drugs`: KEGG-derived candidate drugs per disease-related gene.
+- `Final_Results`: merged gene-level summary with regulation, pathways, and drugs.
+
+## Pipeline 2: ChEMBL Drug Repurposing
+
+Script: `Script/chembl_drugs_repurposing.py`
+
+### What this script does
+
+- Accepts genes from command line or an Excel sheet.
+- Finds corresponding ChEMBL targets and mechanisms.
+- Retrieves molecule name, approval year, max phase, mechanism/action type, and disease.
+- Supports disease filtering and run logging.
+- Exports results to Excel.
+
+### Usage
 
 ```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene BRCA1 --output brca1_drugs.xlsx
+python Script/chembl_drugs_repurposing.py --gene EGFR BRCA1 --output chembl_drugs.xlsx
+python Script/chembl_drugs_repurposing.py --gene EGFR --disease "colorectal cancer" --logs
 ```
 
-### Limit Number of Drugs
+### Key arguments
 
-```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene HER2 --max-drugs 20
-```
+| Argument | Description |
+|---|---|
+| `--gene`, `-g` | One or more target gene symbols |
+| `--gene-excel` | RNA-seq output Excel containing genes |
+| `--gene-column` | Optional gene column name in `--gene-excel` |
+| `--disease`, `-d` | Optional disease filter |
+| `--output`, `-o` | Output Excel file name |
+| `--delay` | Delay between API calls |
+| `--logs` | Enable verbose logs |
+| `--log-file` | Custom path for run log file |
 
-### Enable Debug Logging
+## Typical End-to-End Workflow
 
-```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene EGFR --logs
-```
-
----
-
-## Command Line Arguments
-
-| Argument | Short | Required | Default | Description |
-|----------|-------|----------|---------|-------------|
-| `--gene` | `-g` | Yes | None | Target gene symbol (e.g., EGFR, BRCA1, HER2) |
-| `--disease` | `-d` | No | None | Disease name for filtering results |
-| `--output` | `-o` | No | `chembl_drugs.xlsx` | Output Excel file name |
-| `--max-drugs` | - | No | 30 | Maximum number of drugs to fetch |
-| `--delay` | - | No | 0.1 | Seconds between API calls |
-| `--logs` | - | No | False | Show detailed debug logging |
-
----
-
-## Output Format
-
-The tool generates an Excel file with the following 7 columns:
-
-| Column | Description | Example |
-|--------|-------------|---------|
-| **Drug_ID** | ChEMBL unique identifier | `CHEMBL1201827` |
-| **Name** | Drug common name | `Panitumumab` |
-| **Approval_Year** | FDA approval year or status | `2006` or `Not Approved` |
-| **Max_Phase** | Highest development phase (4=approved) | `4` |
-| **Mechanism_of_Action** | How the drug affects the target | `Epidermal growth factor receptor antagonist` |
-| **Action_Type** | Pharmacological action | `ANTAGONIST`, `INHIBITOR` |
-| **Disease** | Disease indications (MeSH + EFO terms) | `Colorectal Neoplasms; Breast Neoplasms` |
-
----
-
-## Examples
-
-### Example 1: Basic EGFR Query
-
-```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene EGFR --max-drugs 10
-```
-
-**Output sample:**
-
-| Drug_ID | Name | Approval_Year | Max_Phase | Mechanism_of_Action | Action_Type | Disease |
-|---------|------|---------------|-----------|---------------------|-------------|---------|
-| CHEMBL1201827 | Panitumumab | 2006 | 4 | EGFR antagonist | ANTAGONIST | Colorectal Neoplasms |
-| CHEMBL1201577 | Cetuximab | 2004 | 4 | EGFR antagonist | ANTAGONIST | Colorectal Neoplasms |
-| CHEMBL1079742 | Erlotinib | 2004 | 4 | EGFR inhibitor | INHIBITOR | Non-Small Cell Lung Cancer |
-
-### Example 2: BRCA1 with Disease Filter
-
-```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene BRCA1 --disease "ovarian cancer" --max-drugs 15
-```
-
-**What happens:** Only drugs with "ovarian cancer" in their Disease column are retained.
-
-### Example 3: HER2 with Debug Logging
-
-```bash
-python ChEMBL_target-to-drugs_query_tool.py --gene HER2 --logs --output her2_results.xlsx
-```
-
-**Logs will show:**
-- Which target ID was found
-- How many mechanisms retrieved
-- Disease fetching progress for each drug
-- Filtering results
-
----
-
-## Recommended Targets
-
-Targets that have direct drug interactions well-documented in ChEMBL:
-
-| Gene | Disease Area |
-|------|--------------|
-| `EGFR` | Lung, colorectal cancer |
-| `HER2` (ERBB2) | Breast cancer |
-| `BRCA1` | Ovarian, breast cancer |
-| `VEGFA` | Multiple cancers |
-| `BCR-ABL` | Leukemia |
-
-### Targets to Avoid
-
-| Gene | Reason |
-|------|--------|
-| `TP53` | Tumor suppressor - no direct drugs |
-| `KRAS` | Historically undruggable - few records |
-| `MYC` | Transcription factor - difficult to target |
-
----
-
-## Logging & Debugging
-
-Use the `--logs` flag to see detailed execution information:
-
-```
-[18:01:44] [INFO] Searching for target: EGFR
-[18:01:44] [INFO] Found human target: Epidermal growth factor receptor (CHEMBL203)
-[18:01:44] [INFO] Retrieving mechanisms for target: CHEMBL203
-[18:01:44] [INFO] Found 30 mechanisms
-
-[18:01:44] [INFO] Processing 1/30: CHEMBL1201827
-[18:01:44] [DEBUG]   indication_api returned 38 records
-[18:01:44] [DEBUG]     Found mesh_heading: Colorectal Neoplasms
-[18:01:44] [DEBUG]   ✓ Disease captured: Colorectal Neoplasms
-```
-
-This helps you understand:
-- Which target ChEMBL selected
-- How many drugs were found
-- Whether disease information was retrieved
-
----
-
-## How It Works
-
-### Step-by-Step Technical Flow
-
-1. **Target Search** (`find_target()`)
-   - Queries ChEMBL target endpoint with gene symbol
-   - Filters for human single proteins
-   - Returns ChEMBL target ID (e.g., `CHEMBL203`)
-
-2. **Mechanism Retrieval** (`get_mechanisms_for_target()`)
-   - Queries ChEMBL mechanism endpoint
-   - Retrieves all drug-target interactions
-   - Returns list of mechanism records containing drug IDs, MOA, action type
-
-3. **Drug Details Fetch** (`get_drug_details()`)
-   - For each drug ID, queries:
-     - Molecule endpoint (name, approval year, max phase)
-     - Drug indication endpoint (disease terms)
-   - Searches both `mesh_heading` and `efo_term` for diseases
-
-4. **Approval Year Logic** (`get_approval_year()`)
-   - If `max_phase == 4`: Drug is approved
-   - Extracts `first_approval` year if available
-   - Otherwise returns "Approved (Year Unknown)"
-
-5. **Excel Generation**
-   - Creates pandas DataFrame
-   - Saves to multi-column Excel file
-
-### API Endpoints Used
-
-| Endpoint | Purpose |
-|----------|---------|
-| `/target` | Find target by gene symbol |
-| `/mechanism` | Get drug-target mechanisms |
-| `/molecule` | Get drug name and approval data |
-| `/drug_indication` | Get disease indications |
-
----
+1. Run `Script/RNA_seq_Pipeline.py` on your DEGs TSV with a disease name.
+2. Review `Final_Results` and pathway/drug sheets.
+3. Feed selected genes into `Script/chembl_drugs_repurposing.py` for deeper ChEMBL-based drug annotation.
 
 ## Limitations
 
-| Limitation | Explanation |
-|------------|-------------|
-| **Only direct drug-target interactions** | Does not capture drugs working on upstream/downstream regulators |
-| **ChEMBL coverage** | Not all drugs are in ChEMBL; newer drugs may be missing |
-| **Approval years** | Not all approved drugs have `first_approval` populated |
-| **Disease annotations** | Some drugs lack MeSH or EFO disease terms |
-| **Rate limiting** | API delays make large queries (100+ drugs) slower |
-
----
-
-## Requirements
-
-- Python 3.7+
-- Internet connection (for ChEMBL API calls)
-
-### Python Packages
-
-```
-chembl_webresource_client>=0.10.0
-pandas>=1.3.0
-openpyxl>=3.0.0
-```
-
----
-
-## Troubleshooting
-
-### "No mechanisms found for this target"
-
-**Possible causes:**
-- The gene has no direct drugs (e.g., TP53, KRAS)
-- Gene symbol is misspelled
-- Try a different gene
-
-### "No disease information retrieved"
-
-**Solution:**
-- Many research compounds lack disease annotations
-- Use `--logs` flag to see if API returned records
-- Try approved drugs (max_phase=4) for better disease coverage
-
-### Slow performance
-
-**Solution:**
-- Reduce `--max-drugs` value (default 30 is reasonable)
-- Increase `--delay` if getting rate-limited (rare)
-
----
+- KEGG and ChEMBL coverage may not include every disease-gene-drug relationship.
+- API-driven workflows depend on internet connectivity and endpoint availability.
+- Disease text matching can be broad; manually review filtered results.
+- Runtime may increase for large gene lists because of rate-limited API queries.
 
 ## License
 
-MIT License - Free for academic and commercial use.
-
----
-
-## Author
-[Sarib13](https://github.com/Sarib13)
----
-
----
-
-## Acknowledgments
-
-- [ChEMBL](https://www.ebi.ac.uk/chembl/) for providing the free API
-- European Bioinformatics Institute (EBI) for maintaining the database
+MIT License.
